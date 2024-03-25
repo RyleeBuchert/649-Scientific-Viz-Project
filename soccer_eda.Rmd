@@ -1,0 +1,87 @@
+---
+title: "SI-649 Soccer Data Exploration"
+author: "Rylee Buchert"
+---
+
+### Packages and Data
+
+```{r, include=F}
+
+library(tidyverse)
+library(rjson)
+
+```
+
+```{r}
+
+nations <- c('Italy', 'England', 'Germany', 'France', 'Spain', 'European_Championship', 'World_Cup')
+
+players <- fromJSON(file = "data/players.json")
+
+competitions <- fromJSON(file = "data/competitions.json")
+
+matches <- setNames(object = lapply(nations, function(nation) {
+  fromJSON(file = sprintf('%s/matches/matches_%s.json', data_dir, nation))
+}), nm = nations)
+
+events <- setNames(object = lapply(nations, function(nation) {
+  fromJSON(file = sprintf('%s/events/events_%s.json', data_dir, nation))
+}), nm = nations)
+
+```
+
+### 
+
+```{r}
+# Specify match ID
+match_id <- 2576335
+
+# Manually extract and filter events for the match_id, avoiding direct as_tibble conversion
+a_match_list <- lapply(events, function(nation_events) {
+  lapply(nation_events, function(event) {
+    if(event$matchId == match_id) {
+      list(teamId = event$teamId, x = event$positions[[1]]$x, y = event$positions[[1]]$y)
+    } else {
+      NULL
+    }
+  }) %>% compact()
+}) %>% compact()
+
+# Flatten the list and create a dataframe
+a_match_df <- do.call(rbind, lapply(a_match_list, bind_rows)) %>% as.data.frame()
+
+# Extract unique team IDs
+team_ids <- unique(a_match_df$teamId)
+
+# Separate data by team
+df_team_1 <- filter(a_match_df, teamId == team_ids[1])
+df_team_2 <- filter(a_match_df, teamId == team_ids[2])
+
+# Assuming match_info extraction was successful
+match_label <- "Example Match Label" # Placeholder, replace with actual match label extraction
+
+# Plot
+ggplot() +
+  geom_point(data = df_team_1, aes(x = x, y = y), color = 'cyan', shape = 16) +
+  geom_point(data = df_team_2, aes(x = x, y = y), color = 'black', shape = 15) +
+  labs(title = match_label) +
+  theme_minimal() +
+  coord_fixed() +
+  xlim(0, 100) +
+  ylim(0, 100) +
+  theme(plot.title = element_text(size = 20),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        plot.background = element_rect(fill = "lightgreen"))
+
+```
+
+
+
+
+
