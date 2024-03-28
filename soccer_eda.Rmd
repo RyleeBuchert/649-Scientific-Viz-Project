@@ -22,7 +22,7 @@ theme_set(theme_minimal())
 
 events <- read_csv('data/events.csv') %>% select(-1)
 
-# matches <- read_csv('data/matches.csv') %>% select(-1)
+matches <- read_csv('data/matches.csv') %>% select(-1)
 
 players <- read_csv('data/players.csv') %>% 
   select(-1) %>%
@@ -38,7 +38,7 @@ players <- read_csv('data/players.csv') %>%
     )
   )
 
-# competitions <- read_csv('data/competitions.csv') %>% select(-1)
+competitions <- read_csv('data/competitions.csv') %>% select(-1)
 
 teams <- read_csv('data/teams.csv') %>% select(-1)
 
