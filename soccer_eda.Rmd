@@ -1,87 +1,209 @@
 ---
-title: "SI-649 Soccer Data Exploration"
-author: "Rylee Buchert"
+runtime: shiny
 ---
 
-### Packages and Data
+```{css style, echo=F}
+.shiny-frame {
+  height: 800px;
+}
+```
 
 ```{r, include=F}
 
+library(rsconnect)
 library(tidyverse)
-library(rjson)
+library(plotly)
+
+theme_set(theme_minimal())
 
 ```
 
-```{r}
+```{r, include=F}
 
-nations <- c('Italy', 'England', 'Germany', 'France', 'Spain', 'European_Championship', 'World_Cup')
+events <- read_csv('data/events.csv') %>% select(-1)
 
-players <- fromJSON(file = "data/players.json")
+# matches <- read_csv('data/matches.csv') %>% select(-1)
 
-competitions <- fromJSON(file = "data/competitions.json")
+players <- read_csv('data/players.csv') %>% 
+  select(-1) %>%
+  mutate(
+    name = stringi::stri_unescape_unicode(name),
+    shortName = stringi::stri_unescape_unicode(shortName),
+    teamId = as.double(teamId),
+    foot = case_when(
+      foot == "right" ~ "Right",
+      foot == "left" ~ "Left",
+      foot == "both" ~ "Both",
+      TRUE ~ "NA"
+    )
+  )
 
-matches <- setNames(object = lapply(nations, function(nation) {
-  fromJSON(file = sprintf('%s/matches/matches_%s.json', data_dir, nation))
-}), nm = nations)
+# competitions <- read_csv('data/competitions.csv') %>% select(-1)
 
-events <- setNames(object = lapply(nations, function(nation) {
-  fromJSON(file = sprintf('%s/events/events_%s.json', data_dir, nation))
-}), nm = nations)
+teams <- read_csv('data/teams.csv') %>% select(-1)
 
 ```
 
-### 
+```{r, include=F}
+# Plot the soccer pitch
+plot_pitch <- function() {
+  # Sequences for penalty arcs
+  right_arc_angle <- acos((87.5 - 93.5) / 9.15)
+  right_arc_seq <- seq(right_arc_angle, 2 * pi - right_arc_angle, length.out = 100)
+  left_arc_angle <- acos((16.5 - 10.5) / 9.15)
+  left_arc_seq <- seq(left_arc_angle, -left_arc_angle, length.out = 100)
+  
+  # Create pitch elements
+  list(
+    # Outer lines
+    geom_rect(aes(xmin = 0, xmax = 104, ymin = 0, ymax = 68), color = "#faf0e6", fill = NA, inherit.aes = FALSE),
+    # Goal boxes
+    geom_rect(aes(xmin = 87.5, xmax = 104, ymin = 13.84, ymax = 54.16), color = "#faf0e6", fill = NA, inherit.aes = FALSE),
+    geom_rect(aes(xmin = 0, xmax = 16.5, ymin = 13.84, ymax = 54.16), color = "#faf0e6", fill = NA, inherit.aes = FALSE),
+    # 6-yard boxes
+    geom_rect(aes(xmin = 99.5, xmax = 104, ymin = 24.84, ymax = 43.16), color = "#faf0e6", fill = NA, inherit.aes = FALSE),
+    geom_rect(aes(xmin = 0, xmax = 4.5, ymin = 24.84, ymax = 43.16), color = "#faf0e6", fill = NA, inherit.aes = FALSE),
+    # Halfway line
+    geom_segment(aes(x = 52, y = 0, xend = 52, yend = 68), color = "#faf0e6", inherit.aes = FALSE),
+    # Penalty spots
+    geom_point(aes(x = 93, y = 34), color = "#faf0e6", size = 1, inherit.aes = FALSE),
+    geom_point(aes(x = 11, y = 34), color = "#faf0e6", size = 1, inherit.aes = FALSE),
+    # Center circle
+    geom_point(aes(x = 52, y = 34), color = "#faf0e6", inherit.aes = FALSE),
+    annotate(
+      "path", 
+      x = 52 + 9.15 * cos(seq(0, 2 * pi, length.out = 100)), 
+      y = 34 + 9.15 * sin(seq(0, 2 * pi, length.out = 100)), 
+      color = "#faf0e6"
+    ),
+     # Right penalty arc
+    annotate(
+      "path", 
+      x = 93.5 + 9.15 * cos(right_arc_seq), 
+      y = 34 + 9.15 * sin(right_arc_seq), 
+      color = "#faf0e6"
+    ),
+    # Left penalty arc
+    annotate(
+      "path", 
+      x = 10.5 + 9.15 * cos(left_arc_seq), 
+      y = 34 + 9.15 * sin(left_arc_seq), 
+      color = "#faf0e6"
+    ),
+    # Set plot limits and remove plot expansion
+    coord_fixed(),
+    scale_x_continuous(limits = c(0, 104), expand = c(.02, .02)),
+    scale_y_continuous(limits = c(0, 68), expand = c(.02, .02))
+  )
+}
 
-```{r}
-# Specify match ID
-match_id <- 2576335
+```
 
-# Manually extract and filter events for the match_id, avoiding direct as_tibble conversion
-a_match_list <- lapply(events, function(nation_events) {
-  lapply(nation_events, function(event) {
-    if(event$matchId == match_id) {
-      list(teamId = event$teamId, x = event$positions[[1]]$x, y = event$positions[[1]]$y)
-    } else {
-      NULL
-    }
-  }) %>% compact()
-}) %>% compact()
-
-# Flatten the list and create a dataframe
-a_match_df <- do.call(rbind, lapply(a_match_list, bind_rows)) %>% as.data.frame()
-
-# Extract unique team IDs
-team_ids <- unique(a_match_df$teamId)
-
-# Separate data by team
-df_team_1 <- filter(a_match_df, teamId == team_ids[1])
-df_team_2 <- filter(a_match_df, teamId == team_ids[2])
-
-# Assuming match_info extraction was successful
-match_label <- "Example Match Label" # Placeholder, replace with actual match label extraction
-
-# Plot
-ggplot() +
-  geom_point(data = df_team_1, aes(x = x, y = y), color = 'cyan', shape = 16) +
-  geom_point(data = df_team_2, aes(x = x, y = y), color = 'black', shape = 15) +
-  labs(title = match_label) +
-  theme_minimal() +
-  coord_fixed() +
-  xlim(0, 100) +
-  ylim(0, 100) +
-  theme(plot.title = element_text(size = 20),
+```{r, include=F}
+# Create plot of all events for a match
+match_event_plot <- function(match_id, events, players, teams) {
+  # Filter events table to specified match
+  match_events <- events %>% filter(matchId == match_id)
+  
+  # Get dataframes for each team
+  team_ids <- unique(match_events$teamId)
+  team_1 <- match_events %>%
+    filter(teamId == team_ids[1]) %>%
+    mutate(
+      x = x * 104 / 100,
+      y = y * 68 / 100
+    ) %>%
+    left_join(players %>% select(id, shortName, position, foot), by = c("playerId" = "id")) %>%
+    left_join(teams %>% select(id, name), by = c("teamId" = "id"))
+  team_2 <- match_events %>%
+    filter(teamId == team_ids[2]) %>%
+    mutate(
+      x = x * 104 / 100,
+      y = y * 68 / 100
+    ) %>%
+    left_join(players %>% select(id, shortName, position, foot), by = c("playerId" = "id")) %>%
+    left_join(teams %>% select(id, name), by = c("teamId" = "id"))
+  
+  # Create interactive plot
+  ggplotly(
+    ggplot() + 
+      # Add pitch lines
+      plot_pitch() + 
+      # Team 1 data
+      geom_point(data = team_1, aes(x = x, y = y), color = 'white', shape = 15) +
+      geom_point(data = team_1, aes(x = x, y = y, text = (paste0(
+        'Event: ', eventName, '\n',
+        'Team: ', name, '\n',
+        'Player: ', shortName, '\n',
+        'Position: ', position, '\n',
+        'Foot: ', foot, '\n'
+      ))), color = 'black', shape = 15, size = 1.45) +
+      # Team 2 data
+      geom_point(data = team_2, aes(x = x, y = y), color = 'black', shape = 16) +
+      geom_point(data = team_2, aes(x = x, y = y, text = (paste0(
+        'Event: ', eventName, '\n',
+        'Team: ', name, '\n',
+        'Player: ', shortName, '\n',
+        'Position: ', position, '\n',
+        'Foot: ', foot, '\n'
+      ))), color = 'cyan', shape = 16, size = 1.45) +
+      # Theme information
+      theme(
         axis.title.x = element_blank(),
         axis.title.y = element_blank(),
         axis.text.x = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks = element_blank(),
+        axis.line = element_blank(),
         panel.grid = element_blank(),
-        panel.background = element_rect(fill = "white"),
-        plot.background = element_rect(fill = "lightgreen"))
+        plot.background = element_rect(fill = "#195905"),
+        plot.margin = margin(0, 0, 0, 0)
+      ),
+    tooltip = 'text'
+  ) %>% layout(
+    # Specify layout for plotly object
+    margin = list(r = 20),
+    plot_bgcolor = '#195905'
+  )
+}
 
 ```
 
+```{r, echo=F, message=F, warning=F, error=F}
+# UI layout
+ui <- fluidPage(
+  titlePanel("Match Plot"),
+  # Match id entry box and submit button on the same line
+  fluidRow(
+    column(2, textInput("match_id", "Match ID:", value = "2576335")),
+    column(2, actionButton("submit", "Submit", style = "margin-top: 25px; margin-left: -25px;"))
+  ),
+  # Plot output
+  fluidRow(
+    column(12, plotlyOutput("pitchPlot", height = "600px"))
+  )
+)
 
+# Server logic
+server <- function(input, output, session) {
+  # Reactive value to store selected match ID
+  selected_match_id <- reactiveVal(2576335)
+  
+  # Observe event for the submit button
+  observeEvent(input$submit, {
+    selected_match_id(input$match_id)
+  })
+  
+  # Plot output based on the selected match ID
+  output$pitchPlot <- renderPlotly({
+    req(selected_match_id())
+    match_event_plot(selected_match_id(), events, players, teams)
+  })
+}
 
+# Run the application
+shinyApp(ui = ui, server = server)
+
+```
 
 
