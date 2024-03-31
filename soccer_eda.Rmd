@@ -4,6 +4,7 @@
 library(rsconnect)
 library(tidyverse)
 library(plotly)
+library(zoo)
 
 theme_set(theme_minimal())
 
@@ -13,7 +14,7 @@ theme_set(theme_minimal())
 
 events <- read_csv('data/events_small.csv') %>% select(-1)
 
-# matches <- read_csv('data/matches.csv') %>% select(-1)
+matches <- read_csv('data/matches.csv') %>% select(-1)
 
 players <- read_csv('data/players.csv') %>% 
   select(-1) %>%
@@ -29,7 +30,7 @@ players <- read_csv('data/players.csv') %>%
     )
   )
 
-# competitions <- read_csv('data/competitions.csv') %>% select(-1)
+competitions <- read_csv('data/competitions.csv') %>% select(-1)
 
 teams <- read_csv('data/teams.csv') %>% select(-1)
 
@@ -48,11 +49,72 @@ events %>%
 
 ```
 
-```{r}
+```{r, message=F}
+# Create invasion plot
+invasion_plot <- function(match_id) {
+  # Get ids for both teams
+  match_info <- matches %>%
+    filter(id == match_id) %>%
+    select(id, team1, team2)
+  team1 <- match_info$team1
+  team2 <- match_info$team2
+  
+  # Load invasion datasets for specified match
+  invasion_team1 <- read_csv(paste0('data/invasion/', match_id, '_', team1, '.csv')) %>% 
+    select(-1) %>%
+    mutate(
+      Time = Time / 60,
+      Invasion_RA = rollapply(Invasion, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
+    )
+  invasion_team2 <- read_csv(paste0('data/invasion/', match_id, '_', team2, '.csv')) %>% 
+    select(-1) %>%
+    mutate(
+      Time = Time / 60,
+      Invasion_RA = rollapply(Invasion, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
+    )
+  
+  # Create ggplot object
+  ggplot() + 
+    geom_line(data = invasion_team1, aes(x = Time, y = Invasion_RA), color = "red") + 
+    geom_line(data = invasion_team2, aes(x = Time, y = Invasion_RA), color = "blue")
+}
 
+invasion_plot(2576263)
 
 ```
 
+```{r, message=F}
+# Create acceleration plot
+acceleration_plot <- function(match_id) {
+  # Get ids for both teams
+  match_info <- matches %>%
+    filter(id == match_id) %>%
+    select(id, team1, team2)
+  team1 <- match_info$team1
+  team2 <- match_info$team2
+  
+  # Load acceleration datasets for specified match
+  acceleration_team1 <- read_csv(paste0('data/acceleration/', match_id, '_', team1, '.csv')) %>% 
+    select(-1) %>%
+    mutate(
+      Time = Time / 60,
+      Acceleration_RA = rollapply(Acceleration, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
+    )
+  acceleration_team2 <- read_csv(paste0('data/acceleration/', match_id, '_', team2, '.csv')) %>% 
+    select(-1) %>%
+    mutate(
+      Time = Time / 60,
+      Acceleration_RA = rollapply(Acceleration, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
+    )
+  
+  # Create ggplot object
+  ggplot() + 
+    geom_line(data = acceleration_team1, aes(x = Time, y = Acceleration_RA), color = "red") + 
+    geom_line(data = acceleration_team2, aes(x = Time, y = Acceleration_RA), color = "blue")
+}
 
+acceleration_plot(2576263)
+
+```
 
 
