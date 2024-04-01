@@ -4,7 +4,7 @@ runtime: shiny
 
 ```{css style, echo=F}
 .shiny-frame {
-  height: 800px;
+  height: 1500px;
 }
 ```
 
@@ -13,14 +13,16 @@ runtime: shiny
 library(rsconnect)
 library(tidyverse)
 library(plotly)
+library(igraph)
+library(ggraph)
+library(zoo)
+library(cowplot)
 
 theme_set(theme_minimal())
 
 ```
 
 ```{r, include=F}
-
-events <- read_csv('data/events_small.csv') %>% select(-1)
 
 matches <- read_csv('data/matches.csv') %>% select(-1)
 
@@ -38,9 +40,12 @@ players <- read_csv('data/players.csv') %>%
     )
   )
 
-# competitions <- read_csv('data/competitions.csv') %>% select(-1)
+competitions <- read_csv('data/competitions.csv') %>% select(-1)
 
 teams <- read_csv('data/teams.csv') %>% select(-1)
+
+home_color <- "#3E9ACC"
+away_color <- "#D36135"
 
 ```
 
@@ -101,22 +106,25 @@ plot_pitch <- function() {
 
 ```{r, include=F}
 # Create plot of all events for a match
-match_event_plot <- function(match_id, events, players, teams) {
-  # Filter events table to specified match
-  match_events <- events %>% filter(matchId == match_id)
+match_event_plot <- function(match_id, matches, players, teams) {
+  # Get info for match
+  match_info <- matches %>% filter(id == match_id)
   
+  # Read in events table
+  match_events <- read_csv(paste0('data/events/', match_id, '.csv')) %>% select(-1)
+
   # Get dataframes for each team
-  team_ids <- unique(match_events$teamId)
-  team_1 <- match_events %>%
-    filter(teamId == team_ids[1]) %>%
+  home_team <- match_events %>%
+    filter(teamId == match_info$home_team) %>%
     mutate(
       x = x * 104 / 100,
       y = y * 68 / 100
     ) %>%
     left_join(players %>% select(id, shortName, position, foot), by = c("playerId" = "id")) %>%
     left_join(teams %>% select(id, name), by = c("teamId" = "id"))
-  team_2 <- match_events %>%
-    filter(teamId == team_ids[2]) %>%
+  
+  away_team <- match_events %>%
+    filter(teamId == match_info$away_team) %>%
     mutate(
       x = x * 104 / 100,
       y = y * 68 / 100
@@ -130,23 +138,23 @@ match_event_plot <- function(match_id, events, players, teams) {
       # Add pitch lines
       plot_pitch() + 
       # Team 1 data
-      geom_point(data = team_1, aes(x = x, y = y), color = 'white', shape = 15) +
-      geom_point(data = team_1, aes(x = x, y = y, text = (paste0(
+      geom_point(data = home_team, aes(x = x, y = y), color = 'black', shape = 16) +
+      geom_point(data = home_team, aes(x = x, y = y, text = (paste0(
         'Event: ', eventName, '\n',
         'Team: ', name, '\n',
         'Player: ', shortName, '\n',
         'Position: ', position, '\n',
         'Foot: ', foot, '\n'
-      ))), color = 'black', shape = 15, size = 1.45) +
+      ))), color = home_color, shape = 16, size = 1.45) +
       # Team 2 data
-      geom_point(data = team_2, aes(x = x, y = y), color = 'black', shape = 16) +
-      geom_point(data = team_2, aes(x = x, y = y, text = (paste0(
+      geom_point(data = home_team, aes(x = x, y = y), color = 'black', shape = 16) +
+      geom_point(data = away_team, aes(x = x, y = y, text = (paste0(
         'Event: ', eventName, '\n',
         'Team: ', name, '\n',
         'Player: ', shortName, '\n',
         'Position: ', position, '\n',
         'Foot: ', foot, '\n'
-      ))), color = 'cyan', shape = 16, size = 1.45) +
+      ))), color = away_color, shape = 16, size = 1.45) +
       # Theme information
       theme(
         axis.title.x = element_blank(),
@@ -169,6 +177,125 @@ match_event_plot <- function(match_id, events, players, teams) {
 
 ```
 
+```{r, include=F}
+# Create network plot for team passing
+make_pass_network <- function(passing, color) {
+  # Get all unique vertices
+  vertices <- passing %>%
+    select(sender, name) %>% 
+    distinct()
+  
+  # Rename to match igraph's requirements
+  vertices <- vertices %>%
+    rename(id = sender)
+  
+  # Create network object
+  g <- graph_from_data_frame(d = passing, directed = FALSE, vertices = vertices)
+  
+  # Make network plot
+  set.seed(35)
+  ggraph(g, layout = "fr") + 
+    geom_edge_link(aes(width = Time, alpha = Time), lineend = 'round') + 
+    geom_node_point(aes(size = degree(g, mode = "all")), color = color) + 
+    geom_node_text(aes(label = name), vjust = 0.5, hjust = 0.5) +
+    scale_edge_width(range = c(0.05, 1)) + 
+    scale_size_continuous(range = c(5, 20)) + 
+    scale_edge_alpha(range = c(0.5, 1), guide = 'none') + 
+    theme(legend.position = "none")
+}
+
+# Load data and create passing networks
+passing_network <- function(match_id, players) {
+  # Load passing datasets for specified match
+  passing_home <- read_csv(paste0('data/passing/', match_id, '_home.csv')) %>% 
+    select(-1) %>%
+    left_join(players %>% select(id, shortName), by = c("sender" = "id")) %>%
+    separate(
+      shortName, into = c("firstName", "lastName"), 
+      sep = " ", extra = "merge", fill = "right"
+    ) %>%
+    mutate(name = if_else(is.na(lastName), firstName, lastName)) %>%
+    select(-firstName, -lastName)
+  
+  passing_away <- read_csv(paste0('data/passing/', match_id, '_away.csv')) %>% 
+    select(-1) %>%
+    left_join(players %>% select(id, shortName), by = c("sender" = "id")) %>%
+    separate(
+      shortName, into = c("firstName", "lastName"), 
+      sep = " ", extra = "merge", fill = "right"
+    ) %>%
+    mutate(name = if_else(is.na(lastName), firstName, lastName)) %>%
+    select(-firstName, -lastName)
+  
+  # Get network graphs for each team
+  network_home <- make_pass_network(passing_home, home_color)
+  network_away <- make_pass_network(passing_away, away_color)
+
+  # Combine networks horizontally
+  plot_grid(network_home, network_away, align = "h", ncol = 2)
+}
+
+```
+
+```{r, include=F}
+# Create invasion plot
+invasion_plot <- function(match_id) {
+  # Load invasion datasets for specified match
+  invasion_home <- read_csv(paste0('data/invasion/', match_id, '_home.csv')) %>%
+    select(-1) %>%
+    mutate(
+      Time = Time / 60,
+      Invasion_RA = rollapply(Invasion, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
+    )
+  
+  invasion_away <- read_csv(paste0('data/invasion/', match_id, '_away.csv')) %>%
+    select(-1) %>%
+    mutate(
+      Time = Time / 60,
+      Invasion_RA = rollapply(Invasion, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
+    )
+  
+  # Load acceleration datasets for specified match
+  acceleration_home <- read_csv(paste0('data/acceleration/', match_id, '_home.csv')) %>%
+    select(-1) %>%
+    mutate(
+      Time = Time / 60,
+      Acceleration_RA = rollapply(Acceleration, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
+    )
+  
+  acceleration_away <- read_csv(paste0('data/acceleration/', match_id, '_away.csv')) %>%
+    select(-1) %>%
+    mutate(
+      Time = Time / 60,
+      Acceleration_RA = rollapply(Acceleration, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
+    )
+  
+  # Create ggplot object
+  invasion_plot <- ggplotly(
+    ggplot() + 
+      geom_line(data = invasion_home, aes(x = Time, y = Invasion_RA), color = home_color) + 
+      geom_line(data = invasion_away, aes(x = Time, y = Invasion_RA), color = away_color) + 
+      labs(y = "Invasion Index")
+  )
+  
+  # Create ggplot object
+  acceleration_plot <- ggplotly(
+    ggplot() + 
+      geom_line(data = acceleration_home, aes(x = Time, y = Acceleration_RA), color = home_color) + 
+      geom_line(data = acceleration_away, aes(x = Time, y = Acceleration_RA), color = away_color) + 
+      labs(y = "Acceleration Index")
+  )
+  
+  # Align the plots horizontally
+  subplot(invasion_plot, acceleration_plot, nrows = 1, margin = 0.05) %>%
+    layout(
+      yaxis = list(title = "Invasion Index"),
+      yaxis2 = list(title = "Acceleration Index")
+    )
+}
+
+```
+
 ```{r, echo=F, message=F, warning=F, error=F}
 # UI layout
 ui <- fluidPage(
@@ -178,9 +305,17 @@ ui <- fluidPage(
     column(2, textInput("match_id", "Match ID:", value = "2576335")),
     column(2, actionButton("submit", "Submit", style = "margin-top: 25px; margin-left: -25px;"))
   ),
-  # Plot output
+  # Event pitch plot
   fluidRow(
-    column(12, plotlyOutput("pitchPlot", height = "600px"))
+    column(12, plotlyOutput("pitchPlot", height = "500px"))
+  ),
+  # Passing network
+  fluidRow(
+    column(12, plotOutput("passingPlot", height = "400px")),
+  ),
+  # Invasion plot
+  fluidRow(
+    column(12, plotlyOutput("invasionPlot", height = "350px"))
   )
 )
 
@@ -194,10 +329,22 @@ server <- function(input, output, session) {
     selected_match_id(input$match_id)
   })
   
-  # Plot output based on the selected match ID
+  # Event match plot
   output$pitchPlot <- renderPlotly({
     req(selected_match_id())
-    match_event_plot(selected_match_id(), events, players, teams)
+    match_event_plot(selected_match_id(), matches, players, teams)
+  })
+  
+  # Passing network plots
+  output$passingPlot <- renderPlot({
+    req(selected_match_id())
+    passing_network(selected_match_id(), players)
+  })
+  
+  # Match invasion plot
+  output$invasionPlot <- renderPlotly({
+    req(selected_match_id())
+    invasion_plot(selected_match_id())
   })
 }
 

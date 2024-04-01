@@ -1,10 +1,15 @@
 
+### Packages and Data
+
 ```{r, include=F}
 
 library(rsconnect)
 library(tidyverse)
 library(plotly)
+library(igraph)
+library(ggraph)
 library(zoo)
+library(cowplot)
 
 theme_set(theme_minimal())
 
@@ -34,7 +39,12 @@ competitions <- read_csv('data/competitions.csv') %>% select(-1)
 
 teams <- read_csv('data/teams.csv') %>% select(-1)
 
+home_color <- "#3E9ACC"
+away_color <- "#D36135"
+
 ```
+
+### Event Distribution
 
 ```{r}
 
@@ -49,58 +59,35 @@ events %>%
 
 ```
 
+### Invasion Plot
+
 ```{r, message=F}
 # Create invasion plot
 invasion_plot <- function(match_id) {
-  # Get ids for both teams
-  match_info <- matches %>%
-    filter(id == match_id) %>%
-    select(id, team1, team2)
-  team1 <- match_info$team1
-  team2 <- match_info$team2
-  
   # Load invasion datasets for specified match
-  invasion_team1 <- read_csv(paste0('data/invasion/', match_id, '_', team1, '.csv')) %>% 
-    select(-1) %>%
-    mutate(
-      Time = Time / 60,
-      Invasion_RA = rollapply(Invasion, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
-    )
-  invasion_team2 <- read_csv(paste0('data/invasion/', match_id, '_', team2, '.csv')) %>% 
+  invasion_home <- read_csv(paste0('data/invasion/', match_id, '_home.csv')) %>%
     select(-1) %>%
     mutate(
       Time = Time / 60,
       Invasion_RA = rollapply(Invasion, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
     )
   
-  # Create ggplot object
-  ggplot() + 
-    geom_line(data = invasion_team1, aes(x = Time, y = Invasion_RA), color = "red") + 
-    geom_line(data = invasion_team2, aes(x = Time, y = Invasion_RA), color = "blue")
-}
-
-invasion_plot(2576263)
-
-```
-
-```{r, message=F}
-# Create acceleration plot
-acceleration_plot <- function(match_id) {
-  # Get ids for both teams
-  match_info <- matches %>%
-    filter(id == match_id) %>%
-    select(id, team1, team2)
-  team1 <- match_info$team1
-  team2 <- match_info$team2
+  invasion_away <- read_csv(paste0('data/invasion/', match_id, '_away.csv')) %>%
+    select(-1) %>%
+    mutate(
+      Time = Time / 60,
+      Invasion_RA = rollapply(Invasion, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
+    )
   
   # Load acceleration datasets for specified match
-  acceleration_team1 <- read_csv(paste0('data/acceleration/', match_id, '_', team1, '.csv')) %>% 
+  acceleration_home <- read_csv(paste0('data/acceleration/', match_id, '_home.csv')) %>%
     select(-1) %>%
     mutate(
       Time = Time / 60,
       Acceleration_RA = rollapply(Acceleration, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
     )
-  acceleration_team2 <- read_csv(paste0('data/acceleration/', match_id, '_', team2, '.csv')) %>% 
+  
+  acceleration_away <- read_csv(paste0('data/acceleration/', match_id, '_away.csv')) %>%
     select(-1) %>%
     mutate(
       Time = Time / 60,
@@ -108,13 +95,103 @@ acceleration_plot <- function(match_id) {
     )
   
   # Create ggplot object
-  ggplot() + 
-    geom_line(data = acceleration_team1, aes(x = Time, y = Acceleration_RA), color = "red") + 
-    geom_line(data = acceleration_team2, aes(x = Time, y = Acceleration_RA), color = "blue")
+  invasion_plot <- ggplotly(
+    ggplot() + 
+      geom_line(data = invasion_home, aes(x = Time, y = Invasion_RA), color = home_color) + 
+      geom_line(data = invasion_away, aes(x = Time, y = Invasion_RA), color = away_color) + 
+      labs(y = "Invasion Index")
+  )
+  
+  # Create ggplot object
+  acceleration_plot <- ggplotly(
+    ggplot() + 
+      geom_line(data = acceleration_home, aes(x = Time, y = Acceleration_RA), color = home_color) + 
+      geom_line(data = acceleration_away, aes(x = Time, y = Acceleration_RA), color = away_color) + 
+      labs(y = "Acceleration Index")
+  )
+  
+  # Align the plots horizontally
+  subplot(invasion_plot, acceleration_plot, nrows = 1, margin = 0.05) %>%
+    layout(
+      yaxis = list(title = "Invasion Index"),
+      yaxis2 = list(title = "Acceleration Index")
+    )
 }
 
-acceleration_plot(2576263)
+invasion_plot(2576335)
 
 ```
+
+### Pass Network
+
+```{r}
+# Create network plot for team passing
+make_pass_network <- function(passing, color) {
+  # Get all unique vertices
+  vertices <- passing %>%
+    select(sender, name) %>% 
+    distinct()
+  
+  # Rename to match igraph's requirements
+  vertices <- vertices %>%
+    rename(id = sender)
+  
+  # Create network object
+  g <- graph_from_data_frame(d = passing, directed = FALSE, vertices = vertices)
+  
+  # Make network plot
+  set.seed(35)
+  ggraph(g, layout = "fr") + 
+    geom_edge_link(aes(width = Time, alpha = Time), lineend = 'round') + 
+    geom_node_point(aes(size = degree(g, mode = "all")), color = color) + 
+    geom_node_text(aes(label = name), vjust = 0.5, hjust = 0.5) +
+    scale_edge_width(range = c(0.05, 1)) + 
+    scale_size_continuous(range = c(5, 20)) + 
+    scale_edge_alpha(range = c(0.5, 1), guide = 'none') + 
+    theme(legend.position = "none")
+}
+
+# Load data and create passing networks
+passing_network <- function(match_id, players) {
+  # Get ids for both teams
+  match_info <- matches %>%
+    filter(id == match_id) %>%
+    select(id, team1, team2)
+  team1 <- match_info$team1
+  team2 <- match_info$team2
+  
+  # Load passing datasets for specified match
+  passing_home <- read_csv(paste0('data/passing/', match_id, '_home.csv')) %>% 
+    select(-1) %>%
+    left_join(players %>% select(id, shortName), by = c("sender" = "id")) %>%
+    separate(
+      shortName, into = c("firstName", "lastName"), 
+      sep = " ", extra = "merge", fill = "right"
+    ) %>%
+    mutate(name = if_else(is.na(lastName), firstName, lastName)) %>%
+    select(-firstName, -lastName)
+  
+  passing_away <- read_csv(paste0('data/passing/', match_id, '_away.csv')) %>% 
+    select(-1) %>%
+    left_join(players %>% select(id, shortName), by = c("sender" = "id")) %>%
+    separate(
+      shortName, into = c("firstName", "lastName"), 
+      sep = " ", extra = "merge", fill = "right"
+    ) %>%
+    mutate(name = if_else(is.na(lastName), firstName, lastName)) %>%
+    select(-firstName, -lastName)
+  
+  # Get network graphs for each team
+  network_home <- make_pass_network(passing_home, home_color)
+  network_away <- make_pass_network(passing_away, away_color)
+
+  # Combine networks horizontally
+  plot_grid(network_home, network_away, align = "h", ncol = 2)
+}
+
+passing_network(2576335, players)
+
+```
+
 
 
