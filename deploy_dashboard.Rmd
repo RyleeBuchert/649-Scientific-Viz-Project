@@ -1,0 +1,26 @@
+---
+title: "Deploy Match Dashboard"
+---
+
+```{r, include=F}
+# Load rsconnect
+library(rsconnect)
+
+# Set account info
+rsconnect::setAccountInfo(
+  name='rbuchert', 
+  token='F7B366CB297A36B25795F87E6802BE6B', 
+  secret='u51aGrIDDdYUcbFRJOXTGDGOn2Ue+H7cLikH2QUk'
+)
+
+# Deploy to shinyapps.io
+deployApp(
+  appDir = ".",
+  appFiles = c("match_dashboard.Rmd", "data/"),
+  appName = "Match-Dashboard",
+  forceUpdate = TRUE
+)
+
+```
+
+

@@ -2,3 +2,4 @@ data/
 raw-data/
 rsconnect/
 .DS_store
+.Rhistory

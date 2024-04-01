@@ -42,6 +42,21 @@ away_color <- "#D36135"
 
 ```
 
+```{r}
+# Stratified sampling for match ids from each competition
+set.seed(35)
+match_list <- matches %>% 
+  group_by(competitionId) %>%
+  sample_n(size = round(250 * n() / nrow(matches))) %>%
+  ungroup() %>%
+  pull(id) %>%
+  append(2576335) %>%
+  unique() %>%
+  data.frame(id = .) %>%
+  write_csv('data/match_ids.csv')
+
+```
+
 ### Event Distribution
 
 ```{r}
