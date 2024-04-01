@@ -4,7 +4,7 @@ runtime: shiny
 
 ```{css style, echo=F}
 .shiny-frame {
-  height: 1500px;
+  height: 1450px;
 }
 ```
 
@@ -15,7 +15,9 @@ library(plotly)
 library(igraph)
 library(ggraph)
 library(cowplot)
+library(stringr)
 library(zoo)
+library(DT)
 
 theme_set(theme_minimal())
 
@@ -105,7 +107,7 @@ plot_pitch <- function() {
 
 ```{r, include=F}
 # Create plot of all events for a match
-match_event_plot <- function(match_id, matches, players, teams) {
+match_event_plot <- function(match_id, matches, players, teams, player_list = NULL) {
   # Get info for match
   match_info <- matches %>% filter(id == match_id)
   
@@ -131,6 +133,12 @@ match_event_plot <- function(match_id, matches, players, teams) {
     left_join(players %>% select(id, shortName, position, foot), by = c("playerId" = "id")) %>%
     left_join(teams %>% select(id, name), by = c("teamId" = "id"))
   
+  # Filter to selected players
+  if (!is.null(player_list)) {
+    home_team <- home_team %>% filter(playerId %in% player_list)
+    away_team <- away_team %>% filter(playerId %in% player_list)
+  }
+  
   # Create interactive plot
   ggplotly(
     ggplot() + 
@@ -146,7 +154,7 @@ match_event_plot <- function(match_id, matches, players, teams) {
         'Foot: ', foot, '\n'
       ))), color = home_color, shape = 16, size = 1.45) +
       # Team 2 data
-      geom_point(data = home_team, aes(x = x, y = y), color = 'black', shape = 16) +
+      geom_point(data = away_team, aes(x = x, y = y), color = 'black', shape = 16) +
       geom_point(data = away_team, aes(x = x, y = y, text = (paste0(
         'Event: ', eventName, '\n',
         'Team: ', name, '\n',
@@ -172,6 +180,44 @@ match_event_plot <- function(match_id, matches, players, teams) {
     margin = list(r = 20),
     plot_bgcolor = '#195905'
   )
+}
+
+```
+
+```{r, include=F}
+# Get table of player ids, name, and position for a specified match and side
+get_match_players <- function(match_id, side, matches, players) {
+  # Get match info and events
+  match_info <- matches %>% filter(id == match_id)
+  match_events <- read_csv(paste0('data/events/', match_id, '.csv')) %>% select(-1)
+  
+  # Get id for either home or away team
+  if (side == "Home") {
+    team_id <- match_info$home_team
+  } else {
+    team_id <- match_info$away_team
+  }
+  
+  # Get all players from events data
+  players <- match_events %>%
+    filter(teamId == team_id) %>%
+    .$playerId %>%
+    unique() %>%
+    data.frame(id = .) %>%
+    filter(id != 0) %>%
+    left_join(players %>% select(id, shortName, position), by = "id") %>%
+    mutate(lastName = if_else(str_detect(shortName, " "), 
+                              str_extract(shortName, "(?<=\\s).*$"), shortName)) %>%
+    arrange(lastName)
+  
+  # Set column name depending on side
+  if (side == "Home") {
+    players <- players %>% select(id, Home = lastName, Position = position)
+  } else {
+    players <- players %>% select(id, Away = lastName, Position = position)
+  }
+  
+  return(players)
 }
 
 ```
@@ -288,7 +334,9 @@ invasion_plot <- function(match_id) {
   # Align the plots horizontally
   subplot(invasion_plot, acceleration_plot, nrows = 1, margin = 0.05) %>%
     layout(
+      xaxis = list(title = "Time"),
       yaxis = list(title = "Invasion Index"),
+      xaxis2 = list(title = "Time"),
       yaxis2 = list(title = "Acceleration Index")
     )
 }
@@ -298,21 +346,60 @@ invasion_plot <- function(match_id) {
 ```{r, echo=F, message=F, warning=F, error=F}
 # UI layout
 ui <- fluidPage(
-  titlePanel("Match Plot"),
-  # Match id entry box and submit button on the same line
+  tags$head(
+    tags$style(HTML("
+      /* Adjust the style for the title */
+      #matchTitle {
+        font-weight: bold;
+        font-size: 22px;
+        text-align: center;
+      }
+      /* Adjust the size and padding of the table cells */
+      .dataTables_wrapper .dataTable td {
+        padding: 3px;
+        font-size: 12px;
+      }
+      /* Hide the table header */
+      .dataTables_wrapper .dataTable thead {
+        display: none;
+      }
+    "))
+  ),
+  titlePanel("Soccer Match Dashboard"),
+  # Match id entry box and submit button
   fluidRow(
     column(2, textInput("match_id", "Match ID:", value = "2576335")),
     column(2, actionButton("submit", "Submit", style = "margin-top: 25px; margin-left: -25px;"))
   ),
-  # Event pitch plot
+  # Pitch plot title
   fluidRow(
-    column(12, plotlyOutput("pitchPlot", height = "500px"))
+    column(12, textOutput("matchTitle"))
   ),
-  # Passing network
+  # Event pitch plot with player lists
+  fluidRow(
+    column(2, dataTableOutput("homePlayers")),
+    column(8, plotlyOutput("pitchPlot", height = "400px")),
+    column(2, dataTableOutput("awayPlayers"))
+  ),
+  # Passing network title
+  fluidRow(
+    column(12, align = "center", tags$h2(
+      "Team Passing Networks", 
+      style = "font-weight: bold; text-align: center; margin-top: -10px; margin-bottom: 10px; font-size: 18px;"
+    ))
+  ),
+  # Passing network plot
   fluidRow(
     column(12, plotOutput("passingPlot", height = "400px")),
   ),
-  # Invasion plot
+  # Invasion/acceleration title
+  fluidRow(
+    column(12, align = "center", tags$h2(
+      "Invasion & Acceleration Plots", 
+      style = "font-weight: bold; text-align: center; margin-bottom: -2px; font-size: 18px;"
+    ))
+  ),
+  # Invasion/acceleration plots
   fluidRow(
     column(12, plotlyOutput("invasionPlot", height = "350px"))
   )
@@ -328,12 +415,95 @@ server <- function(input, output, session) {
     selected_match_id(input$match_id)
   })
   
+  # Reactive expression for the match title
+  match_title <- reactive({
+    req(selected_match_id())
+    matches %>%
+      filter(id == selected_match_id()) %>%
+      pull(label)
+  })
+
+  # Render the match title
+  output$matchTitle <- renderText({
+    match_title()
+  })
+  
+  # Reactive data for home player table
+  home_players <- reactive({
+    req(selected_match_id())
+    get_match_players(selected_match_id(), "Home", matches, players)
+  })
+
+  # Reactive data for away player table
+  away_players <- reactive({
+    req(selected_match_id())
+    get_match_players(selected_match_id(), "Away", matches, players)
+  })
+  
+  # Combined reactive expression for selected player ids
+  selected_player_ids <- reactive({
+    # Start with all players from both teams
+    combined_ids <- c(home_players()$id, away_players()$id)
+    
+    # If players are selected in either table, filter to those players
+    if (length(input$homePlayers_rows_selected) > 0 | length(input$awayPlayers_rows_selected) > 0) {
+      combined_ids <- c(
+        home_players()$id[input$homePlayers_rows_selected],
+        away_players()$id[input$awayPlayers_rows_selected]
+      )
+    }
+    
+    # Return the combined selected ids
+    return(combined_ids)
+  })
+  
   # Event match plot
   output$pitchPlot <- renderPlotly({
     req(selected_match_id())
-    match_event_plot(selected_match_id(), matches, players, teams)
+    # Use the combined selected player IDs
+    match_event_plot(selected_match_id(), matches, players, teams, selected_player_ids())
   })
   
+  # Table of home players
+  output$homePlayers <- renderDataTable({
+    datatable(
+      home_players() %>% select(-id),
+      rownames = FALSE,
+      caption = htmltools::tags$caption(
+        style = 'caption-side: top; text-align: center; font-weight: bold;',
+        'Home Players'
+      ),
+      options = list(
+        paging = FALSE,
+        searching = FALSE,
+        info = FALSE,
+        ordering = FALSE,
+        autoWidth = TRUE
+      ),
+      class = 'cell-border compact'
+    )
+  }, selection = 'none')
+
+  # Table of away players
+  output$awayPlayers <- renderDataTable({
+    datatable(
+      away_players() %>% select(-id),
+      rownames = FALSE,
+      caption = htmltools::tags$caption(
+        style = 'caption-side: top; text-align: center; font-weight: bold;',
+        'Away Players'
+      ),
+      options = list(
+        paging = FALSE,
+        searching = FALSE,
+        info = FALSE,
+        ordering = FALSE,
+        autoWidth = TRUE
+      ),
+      class = 'cell-border compact'
+    )
+  }, selection = 'none')
+
   # Passing network plots
   output$passingPlot <- renderPlot({
     req(selected_match_id())

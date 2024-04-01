@@ -3,13 +3,13 @@
 
 ```{r, include=F}
 
-library(rsconnect)
 library(tidyverse)
 library(plotly)
 library(igraph)
 library(ggraph)
 library(cowplot)
 library(zoo)
+library(stringr)
 
 theme_set(theme_minimal())
 
@@ -205,6 +205,42 @@ passing_network <- function(match_id, players) {
 passing_network(2576335, players)
 
 ```
+
+### Team Table
+
+```{r, message=F}
+# Get table of player ids, name, and position for a specified match and side
+get_match_players <- function(match_id, side, matches, players) {
+  # Get match info and events
+  match_info <- matches %>% filter(id == match_id)
+  match_events <- read_csv(paste0('data/events/', match_id, '.csv')) %>% select(-1)
+  
+  # Get id for either home or away team
+  if (side == "home") {
+    team_id <- match_info$home_team
+  } else {
+    team_id <- match_info$away_team
+  }
+  
+  # Get all players from events data
+  match_events %>%
+    filter(teamId == team_id) %>%
+    .$playerId %>%
+    unique() %>%
+    data.frame(id = .) %>%
+    filter(id != 0) %>%
+    left_join(players %>% select(id, shortName, position), by = "id") %>%
+    mutate(lastName = if_else(str_detect(shortName, " "), 
+                              str_extract(shortName, "(?<=\\s).*$"), shortName)) %>%
+    arrange(lastName) %>%
+    select(id, name = shortName, position)
+}
+
+get_match_players(2517000, "away", matches, players)
+
+```
+
+
 
 
 
