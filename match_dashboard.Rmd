@@ -15,8 +15,9 @@ library(tidyverse)
 library(plotly)
 library(igraph)
 library(ggraph)
-library(zoo)
 library(cowplot)
+library(zoo)
+library(zip)
 
 theme_set(theme_minimal())
 
@@ -24,7 +25,11 @@ theme_set(theme_minimal())
 
 ```{r, include=F}
 
+competitions <- read_csv('data/competitions.csv') %>% select(-1)
+
 matches <- read_csv('data/matches.csv') %>% select(-1)
+
+teams <- read_csv('data/teams.csv') %>% select(-1)
 
 players <- read_csv('data/players.csv') %>% 
   select(-1) %>%
@@ -40,12 +45,19 @@ players <- read_csv('data/players.csv') %>%
     )
   )
 
-competitions <- read_csv('data/competitions.csv') %>% select(-1)
-
-teams <- read_csv('data/teams.csv') %>% select(-1)
-
 home_color <- "#3E9ACC"
 away_color <- "#D36135"
+
+```
+
+```{r, include=F}
+# Define the path to the ZIP archives
+zip_files <- c("data/passing.zip", "data/invasion.zip", "data/events.zip", "data/acceleration.zip")
+
+# Unzip each directory
+for (zip_file in zip_files) {
+  unzip(zip_file, exdir = "data/")
+}
 
 ```
 

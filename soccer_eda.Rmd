@@ -8,8 +8,8 @@ library(tidyverse)
 library(plotly)
 library(igraph)
 library(ggraph)
-library(zoo)
 library(cowplot)
+library(zoo)
 
 theme_set(theme_minimal())
 
@@ -17,9 +17,11 @@ theme_set(theme_minimal())
 
 ```{r, include=F}
 
-events <- read_csv('data/events_small.csv') %>% select(-1)
+competitions <- read_csv('data/competitions.csv') %>% select(-1)
 
 matches <- read_csv('data/matches.csv') %>% select(-1)
+
+teams <- read_csv('data/teams.csv') %>% select(-1)
 
 players <- read_csv('data/players.csv') %>% 
   select(-1) %>%
@@ -34,10 +36,6 @@ players <- read_csv('data/players.csv') %>%
       TRUE ~ "NA"
     )
   )
-
-competitions <- read_csv('data/competitions.csv') %>% select(-1)
-
-teams <- read_csv('data/teams.csv') %>% select(-1)
 
 home_color <- "#3E9ACC"
 away_color <- "#D36135"
