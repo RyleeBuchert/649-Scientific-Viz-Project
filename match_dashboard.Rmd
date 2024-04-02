@@ -334,9 +334,9 @@ invasion_plot <- function(match_id) {
   # Align the plots horizontally
   subplot(invasion_plot, acceleration_plot, nrows = 1, margin = 0.05) %>%
     layout(
-      xaxis = list(title = "Time"),
+      xaxis = list(title = "Time (min)"),
       yaxis = list(title = "Invasion Index"),
-      xaxis2 = list(title = "Time"),
+      xaxis2 = list(title = "Time (min)"),
       yaxis2 = list(title = "Acceleration Index")
     )
 }
