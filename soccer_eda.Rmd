@@ -21,7 +21,9 @@ competitions <- read_csv('data/competitions.csv') %>% select(-1)
 
 matches <- read_csv('data/matches.csv') %>% select(-1)
 
-teams <- read_csv('data/teams.csv') %>% select(-1)
+teams <- read_csv('data/teams.csv') %>% 
+  select(-1) %>%
+  mutate(name = stringi::stri_unescape_unicode(name))
 
 players <- read_csv('data/players.csv') %>% 
   select(-1) %>%
@@ -42,6 +44,43 @@ away_color <- "#D36135"
 
 ```
 
+### Title
+
+```{r}
+# Function to return title for a match
+get_match_label <- function(matches, match_id) {
+  # Get home team id
+  home_team <- matches %>% filter(id == match_id) %>% pull(home_team)
+  
+  # Get initial match label
+  match_label <- matches %>% filter(id == match_id) %>% pull(label)
+
+  # Get team names and final score
+  team_names <- str_extract_all(match_label, "[A-Za-z]+(?:\\s[A-Za-z]+)*")[[1]]
+  scores <- as.numeric(str_extract_all(match_label, "\\d+")[[1]])
+  
+  # Determine which team is home and away
+  match_info <- data.frame(
+    team = team_names,
+    score = scores,
+    stringsAsFactors = FALSE
+  ) %>%
+    left_join(teams %>% select(name, id), by = c("team" = "name")) %>%
+    select(id, team, score) %>%
+    mutate(side = ifelse(id == home_team, "H", "A"))
+  
+  # Create title
+  paste0(
+    match_info$team[1], " (", match_info$side[1], ") - ", 
+    match_info$team[2], " (", match_info$side[2], "), ", 
+    match_info$score[1], " - ", match_info$score[2]
+  )
+}
+
+get_match_label(matches, 2565829)
+
+```
+
 ```{r}
 # Stratified sampling for match ids from each competition
 set.seed(35)
@@ -50,7 +89,7 @@ match_list <- matches %>%
   sample_n(size = round(250 * n() / nrow(matches))) %>%
   ungroup() %>%
   pull(id) %>%
-  append(2576335) %>%
+  append(c(2576335, 2576105, 2576263)) %>%
   unique() %>%
   data.frame(id = .) %>%
   write_csv('data/match_ids.csv')

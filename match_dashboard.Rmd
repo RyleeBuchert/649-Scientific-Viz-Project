@@ -1,4 +1,5 @@
 ---
+title: "Soccer Match Dashboard"
 runtime: shiny
 ---
 
@@ -289,45 +290,45 @@ invasion_plot <- function(match_id) {
   invasion_home <- read_csv(paste0('data/invasion/', match_id, '_home.csv')) %>%
     select(-1) %>%
     mutate(
-      Time = Time / 60,
-      Invasion_RA = rollapply(Invasion, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
+      Time = round(Time / 60, 2),
+      Invasion = round(rollapply(Invasion, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE), 3)
     )
   
   invasion_away <- read_csv(paste0('data/invasion/', match_id, '_away.csv')) %>%
     select(-1) %>%
     mutate(
-      Time = Time / 60,
-      Invasion_RA = rollapply(Invasion, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
+      Time = round(Time / 60, 2),
+      Invasion = round(rollapply(Invasion, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE), 3)
     )
   
   # Load acceleration datasets for specified match
   acceleration_home <- read_csv(paste0('data/acceleration/', match_id, '_home.csv')) %>%
     select(-1) %>%
     mutate(
-      Time = Time / 60,
-      Acceleration_RA = rollapply(Acceleration, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
+      Time = round(Time / 60, 2),
+      Acceleration = round(rollapply(Acceleration, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE), 3)
     )
   
   acceleration_away <- read_csv(paste0('data/acceleration/', match_id, '_away.csv')) %>%
     select(-1) %>%
     mutate(
-      Time = Time / 60,
-      Acceleration_RA = rollapply(Acceleration, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE)
+      Time = round(Time / 60, 2),
+      Acceleration = round(rollapply(Acceleration, width = 220, FUN = mean, fill = NA, align = "right", partial = TRUE), 3)
     )
   
   # Create ggplot object
   invasion_plot <- ggplotly(
     ggplot() + 
-      geom_line(data = invasion_home, aes(x = Time, y = Invasion_RA), color = home_color) + 
-      geom_line(data = invasion_away, aes(x = Time, y = Invasion_RA), color = away_color) + 
+      geom_line(data = invasion_home, aes(x = Time, y = Invasion), color = home_color) + 
+      geom_line(data = invasion_away, aes(x = Time, y = Invasion), color = away_color) + 
       labs(y = "Invasion Index")
   )
   
   # Create ggplot object
   acceleration_plot <- ggplotly(
     ggplot() + 
-      geom_line(data = acceleration_home, aes(x = Time, y = Acceleration_RA), color = home_color) + 
-      geom_line(data = acceleration_away, aes(x = Time, y = Acceleration_RA), color = away_color) + 
+      geom_line(data = acceleration_home, aes(x = Time, y = Acceleration), color = home_color) + 
+      geom_line(data = acceleration_away, aes(x = Time, y = Acceleration), color = away_color) + 
       labs(y = "Acceleration Index")
   )
   
@@ -339,6 +340,39 @@ invasion_plot <- function(match_id) {
       xaxis2 = list(title = "Time (min)"),
       yaxis2 = list(title = "Acceleration Index")
     )
+}
+
+```
+
+```{r, include=F}
+# Function to return title for a match
+get_match_label <- function(matches, match_id) {
+  # Get home team id
+  home_team <- matches %>% filter(id == match_id) %>% pull(home_team)
+  
+  # Get initial match label
+  match_label <- matches %>% filter(id == match_id) %>% pull(label)
+
+  # Get team names and final score
+  team_names <- str_extract_all(match_label, "[A-Za-z]+(?:\\s[A-Za-z]+)*")[[1]]
+  scores <- as.numeric(str_extract_all(match_label, "\\d+")[[1]])
+  
+  # Determine which team is home and away
+  match_info <- data.frame(
+    team = team_names,
+    score = scores,
+    stringsAsFactors = FALSE
+  ) %>%
+    left_join(teams %>% select(name, id), by = c("team" = "name")) %>%
+    select(id, team, score) %>%
+    mutate(side = ifelse(id == home_team, "H", "A"))
+  
+  # Create title
+  paste0(
+    match_info$team[1], " (", match_info$side[1], ") - ", 
+    match_info$team[2], " (", match_info$side[2], "), ", 
+    match_info$score[1], " - ", match_info$score[2]
+  )
 }
 
 ```
@@ -365,7 +399,6 @@ ui <- fluidPage(
       }
     "))
   ),
-  titlePanel("Soccer Match Dashboard"),
   # Match id entry box and submit button
   fluidRow(
     column(2, textInput("match_id", "Match ID:", value = "2576335")),
@@ -385,7 +418,7 @@ ui <- fluidPage(
   fluidRow(
     column(12, align = "center", tags$h2(
       "Team Passing Networks", 
-      style = "font-weight: bold; text-align: center; margin-top: -10px; margin-bottom: 10px; font-size: 18px;"
+      style = "font-weight: bold; text-align: center; margin-bottom: 10px; font-size: 18px;"
     ))
   ),
   # Passing network plot
@@ -418,9 +451,7 @@ server <- function(input, output, session) {
   # Reactive expression for the match title
   match_title <- reactive({
     req(selected_match_id())
-    matches %>%
-      filter(id == selected_match_id()) %>%
-      pull(label)
+    get_match_label(matches, selected_match_id())
   })
 
   # Render the match title
